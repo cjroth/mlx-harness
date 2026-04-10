@@ -1,0 +1,35 @@
+FROM ubuntu:24.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Core
+    bash \
+    coreutils \
+    git \
+    curl \
+    wget \
+    ca-certificates \
+    # Build tools
+    build-essential \
+    cmake \
+    pkg-config \
+    # Python
+    python3 \
+    python3-pip \
+    python3-venv \
+    # Node
+    nodejs \
+    npm \
+    # Text processing
+    jq \
+    ripgrep \
+    tree \
+    less \
+    # Networking
+    openssh-client \
+    netcat-openbsd \
+    && rm -rf /var/lib/apt/lists/*
+
+# Non-root user
+RUN useradd -m -s /bin/bash agent
+USER agent
+WORKDIR /workspace
