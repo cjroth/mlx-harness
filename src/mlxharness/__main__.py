@@ -6,7 +6,7 @@ from mlxharness.config import parse_args
 from mlxharness.engine import Engine
 from mlxharness.executor import DockerExecutor, SubprocessExecutor
 from mlxharness.agent import Agent
-from mlxharness.tui import run_loop
+from mlxharness.tui import HarnessApp
 
 
 def main() -> None:
@@ -26,7 +26,7 @@ def main() -> None:
     try:
         executor.start()
         agent = Agent(engine=engine, executor=executor)
-        run_loop(agent)
+        HarnessApp(agent).run()
     finally:
         executor.stop()
 

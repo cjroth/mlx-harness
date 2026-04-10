@@ -9,6 +9,14 @@ description = "A minimal, single-process AI coding agent powered by MLX on Apple
 requires-python = ">=3.11"
 dependencies = [
     "mlx-lm>=0.31.2",
+    "textual>=0.80",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-timeout>=2.0",
 ]
 
 [project.scripts]
@@ -17,6 +25,7 @@ mlxharness = "mlxharness.__main__:main"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v"
+asyncio_mode = "auto"
 markers = [
     "e2e: end-to-end tests requiring model and Docker (deselect with '-m \"not e2e\"')",
 ]
