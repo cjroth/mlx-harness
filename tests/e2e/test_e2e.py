@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from harnessthing.agent import ContextWindowExhaustedError
-from harnessthing.events import DoneEvent, TokenEvent, ToolCallEvent, ToolResultEvent
+from mlxharness.agent import ContextWindowExhaustedError
+from mlxharness.events import DoneEvent, TokenEvent, ToolCallEvent, ToolResultEvent
 
 
 pytestmark = pytest.mark.e2e

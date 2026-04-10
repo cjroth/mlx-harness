@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from harnessthing.config import DEFAULT_MODEL, parse_args, resolve_hf_token
+from mlxharness.config import DEFAULT_MODEL, parse_args, resolve_hf_token
 
 
 class TestResolveHfToken:
@@ -20,7 +20,7 @@ class TestResolveHfToken:
 
         with (
             patch.dict("os.environ", {}, clear=True),
-            patch("harnessthing.config.Path.home", return_value=tmp_path),
+            patch("mlxharness.config.Path.home", return_value=tmp_path),
         ):
             assert resolve_hf_token() == "hf_fromfile"
 
@@ -31,14 +31,14 @@ class TestResolveHfToken:
 
         with (
             patch.dict("os.environ", {"HF_TOKEN": "hf_env"}),
-            patch("harnessthing.config.Path.home", return_value=tmp_path),
+            patch("mlxharness.config.Path.home", return_value=tmp_path),
         ):
             assert resolve_hf_token() == "hf_env"
 
     def test_returns_none_when_missing(self, tmp_path):
         with (
             patch.dict("os.environ", {}, clear=True),
-            patch("harnessthing.config.Path.home", return_value=tmp_path),
+            patch("mlxharness.config.Path.home", return_value=tmp_path),
         ):
             assert resolve_hf_token() is None
 

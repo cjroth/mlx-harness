@@ -4,7 +4,7 @@ import json
 import re
 from typing import Iterator, Protocol
 
-from harnessthing.events import (
+from mlxharness.events import (
     DoneEvent,
     ErrorEvent,
     Event,
@@ -13,7 +13,7 @@ from harnessthing.events import (
     ToolCallEvent,
     ToolResultEvent,
 )
-from harnessthing.executor import CommandResult, Executor
+from mlxharness.executor import CommandResult, Executor
 
 CONTEXT_HEADROOM = 512
 MAX_TOOL_RESULT_CHARS = 4096
@@ -81,11 +81,11 @@ class Agent:
         ]
 
     def _system_prompt(self) -> str:
-        from harnessthing.engine import SYSTEM_PROMPT
+        from mlxharness.engine import SYSTEM_PROMPT
         return SYSTEM_PROMPT
 
     def _tools(self) -> list[dict]:
-        from harnessthing.engine import TOOLS
+        from mlxharness.engine import TOOLS
         return TOOLS
 
     def _check_context_window(self) -> None:

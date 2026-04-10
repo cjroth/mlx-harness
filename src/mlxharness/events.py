@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from harnessthing.executor import CommandResult
+from mlxharness.executor import CommandResult
 
 
 @dataclass

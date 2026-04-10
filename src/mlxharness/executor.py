@@ -24,7 +24,7 @@ class Executor(Protocol):
 class DockerExecutor:
     def __init__(
         self,
-        container_name: str = "harnessthing-sandbox",
+        container_name: str = "mlxharness-sandbox",
         workspace: Path | None = None,
         timeout: int = DEFAULT_TIMEOUT,
     ):
@@ -39,7 +39,7 @@ class DockerExecutor:
 
         # Build the image
         subprocess.run(
-            ["docker", "build", "-t", "harnessthing-sandbox", "-f", "Dockerfile.sandbox", "."],
+            ["docker", "build", "-t", "mlxharness-sandbox", "-f", "Dockerfile.sandbox", "."],
             check=True,
             capture_output=True,
         )
@@ -58,7 +58,7 @@ class DockerExecutor:
         ]
         if self.workspace:
             cmd.extend(["-v", f"{self.workspace}:/workspace"])
-        cmd.extend(["harnessthing-sandbox", "sleep", "infinity"])
+        cmd.extend(["mlxharness-sandbox", "sleep", "infinity"])
 
         subprocess.run(cmd, check=True, capture_output=True)
         self._started = True

@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from harnessthing.executor import CommandResult, DockerExecutor, SubprocessExecutor
+from mlxharness.executor import CommandResult, DockerExecutor, SubprocessExecutor
 
 
 class TestDockerExecutor:
@@ -12,7 +12,7 @@ class TestDockerExecutor:
         executor = DockerExecutor(container_name="test-sandbox")
         executor._started = True
 
-        with patch("harnessthing.executor.subprocess.run") as mock_run:
+        with patch("mlxharness.executor.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
                 returncode=0, stdout="output\n", stderr=""
             )
@@ -31,7 +31,7 @@ class TestDockerExecutor:
         executor = DockerExecutor(container_name="test-sandbox")
         executor._started = True
 
-        with patch("harnessthing.executor.subprocess.run") as mock_run:
+        with patch("mlxharness.executor.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
                 returncode=1, stdout="", stderr="error\n"
             )
@@ -44,7 +44,7 @@ class TestDockerExecutor:
         executor = DockerExecutor(container_name="test-sandbox")
         executor._started = True
 
-        with patch("harnessthing.executor.subprocess.run") as mock_run:
+        with patch("mlxharness.executor.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
                 returncode=127, stdout="", stderr="command not found"
             )
@@ -56,7 +56,7 @@ class TestDockerExecutor:
         executor = DockerExecutor(container_name="test-sandbox", timeout=5)
         executor._started = True
 
-        with patch("harnessthing.executor.subprocess.run") as mock_run:
+        with patch("mlxharness.executor.subprocess.run") as mock_run:
             import subprocess
             mock_run.side_effect = subprocess.TimeoutExpired(cmd="test", timeout=5)
             result = executor.run("sleep 100")
@@ -69,7 +69,7 @@ class TestSubprocessExecutor:
     def test_run_constructs_correct_command(self):
         executor = SubprocessExecutor()
 
-        with patch("harnessthing.executor.subprocess.run") as mock_run:
+        with patch("mlxharness.executor.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
                 returncode=0, stdout="output\n", stderr=""
             )
@@ -87,7 +87,7 @@ class TestSubprocessExecutor:
     def test_run_captures_stdout_and_stderr(self):
         executor = SubprocessExecutor()
 
-        with patch("harnessthing.executor.subprocess.run") as mock_run:
+        with patch("mlxharness.executor.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
                 returncode=0, stdout="out\n", stderr="warn\n"
             )
@@ -99,7 +99,7 @@ class TestSubprocessExecutor:
     def test_run_timeout(self):
         executor = SubprocessExecutor(timeout=5)
 
-        with patch("harnessthing.executor.subprocess.run") as mock_run:
+        with patch("mlxharness.executor.subprocess.run") as mock_run:
             import subprocess
             mock_run.side_effect = subprocess.TimeoutExpired(cmd="test", timeout=5)
             result = executor.run("sleep 100")

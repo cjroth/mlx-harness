@@ -4,15 +4,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from harnessthing.agent import (
+from mlxharness.agent import (
     Agent,
     ContextWindowExhaustedError,
     format_tool_result,
     parse_tool_call,
     truncate_result,
 )
-from harnessthing.events import DoneEvent, ThinkingEvent, TokenEvent, ToolCallEvent, ToolResultEvent
-from harnessthing.executor import CommandResult
+from mlxharness.events import DoneEvent, ThinkingEvent, TokenEvent, ToolCallEvent, ToolResultEvent
+from mlxharness.executor import CommandResult
 
 
 # --- parse_tool_call ---

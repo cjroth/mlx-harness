@@ -3,7 +3,7 @@ from __future__ import annotations
 import readline  # noqa: F401 — enables readline support for input()
 import sys
 
-from harnessthing.events import (
+from mlxharness.events import (
     DoneEvent,
     ErrorEvent,
     Event,

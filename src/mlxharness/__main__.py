@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import sys
 
-from harnessthing.config import parse_args
-from harnessthing.engine import Engine
-from harnessthing.executor import DockerExecutor, SubprocessExecutor
-from harnessthing.agent import Agent
-from harnessthing.tui import run_loop
+from mlxharness.config import parse_args
+from mlxharness.engine import Engine
+from mlxharness.executor import DockerExecutor, SubprocessExecutor
+from mlxharness.agent import Agent
+from mlxharness.tui import run_loop
 
 
 def main() -> None:

@@ -3,9 +3,9 @@ from __future__ import annotations
 import io
 from unittest.mock import patch
 
-from harnessthing.events import DoneEvent, ErrorEvent, ThinkingEvent, TokenEvent, ToolCallEvent, ToolResultEvent
-from harnessthing.executor import CommandResult
-from harnessthing.tui import render_event
+from mlxharness.events import DoneEvent, ErrorEvent, ThinkingEvent, TokenEvent, ToolCallEvent, ToolResultEvent
+from mlxharness.executor import CommandResult
+from mlxharness.tui import render_event
 
 DIM = "\033[2m"
 YELLOW = "\033[33m"

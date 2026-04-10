@@ -1,4 +1,4 @@
-# harnessthing — Local AI Coding Agent
+# mlxharness — Local AI Coding Agent
 
 ## Vision
 
@@ -206,7 +206,7 @@ Commands execute inside a long-running Docker container via `docker exec`.
 
 ```python
 subprocess.run(
-    ["docker", "exec", "harnessthing-sandbox", "bash", "-c", command],
+    ["docker", "exec", "mlxharness-sandbox", "bash", "-c", command],
     capture_output=True, text=True, timeout=120
 )
 ```
@@ -315,12 +315,12 @@ Here are the files in your workspace:    ← normal, response text
 ## Project Structure
 
 ```
-harnessthing/
+mlxharness/
 ├── pyproject.toml
 ├── SPEC.md
 ├── Dockerfile.sandbox
 ├── src/
-│   └── harnessthing/
+│   └── mlxharness/
 │       ├── __init__.py
 │       ├── __main__.py       # CLI entry point, arg parsing
 │       ├── engine.py         # Model loading, streaming generation
@@ -407,27 +407,27 @@ class TestEndToEnd:
 @pytest.fixture(scope="session")
 def engine():
     """Load model once for all e2e tests."""
-    from harnessthing.engine import Engine
+    from mlxharness.engine import Engine
     return Engine(model_name="mlx-community/gemma-4-e4b-it-4bit")
 
 @pytest.fixture(scope="session")
 def sandbox():
     """Start Docker sandbox once, tear down after all tests."""
-    subprocess.run(["docker", "build", "-t", "harnessthing-sandbox",
+    subprocess.run(["docker", "build", "-t", "mlxharness-sandbox",
                      "-f", "Dockerfile.sandbox", "."], check=True)
-    subprocess.run(["docker", "run", "-d", "--name", "harnessthing-test-sandbox",
+    subprocess.run(["docker", "run", "-d", "--name", "mlxharness-test-sandbox",
                      "--network", "bridge",
                      "-v", f"{Path.cwd()}/workspace:/workspace",
-                     "harnessthing-sandbox", "sleep", "infinity"], check=True)
+                     "mlxharness-sandbox", "sleep", "infinity"], check=True)
     yield
-    subprocess.run(["docker", "rm", "-f", "harnessthing-test-sandbox"])
+    subprocess.run(["docker", "rm", "-f", "mlxharness-test-sandbox"])
 
 @pytest.fixture
 def agent(engine, sandbox):
     """Fresh agent per test. Shares model and sandbox."""
-    from harnessthing.agent import Agent
-    from harnessthing.executor import DockerExecutor
-    executor = DockerExecutor(container_name="harnessthing-test-sandbox")
+    from mlxharness.agent import Agent
+    from mlxharness.executor import DockerExecutor
+    executor = DockerExecutor(container_name="mlxharness-test-sandbox")
     return Agent(engine=engine, executor=executor)
 ```
 
@@ -443,19 +443,19 @@ def agent(engine, sandbox):
 
 ```bash
 # Default: docker sandbox, default model, current dir as workspace
-harnessthing
+mlxharness
 
 # No sandbox
-harnessthing --sandbox=none
+mlxharness --sandbox=none
 
 # Custom model
-harnessthing --model mlx-community/gemma-2-9b-it-4bit
+mlxharness --model mlx-community/gemma-2-9b-it-4bit
 
 # Custom workspace (any path — a repo, a scratch dir, whatever)
-harnessthing --workspace ~/projects/my-app
+mlxharness --workspace ~/projects/my-app
 
 # Specific HF token (only needed for gated models, not Gemma 4)
-HF_TOKEN=hf_xxx harnessthing
+HF_TOKEN=hf_xxx mlxharness
 ```
 
 ## Non-Goals

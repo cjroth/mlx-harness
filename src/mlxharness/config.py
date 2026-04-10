@@ -31,7 +31,7 @@ def resolve_hf_token() -> str | None:
 
 def parse_args(argv: list[str] | None = None) -> Config:
     parser = argparse.ArgumentParser(
-        prog="harnessthing",
+        prog="mlxharness",
         description="Local AI coding agent powered by MLX",
     )
     parser.add_argument(
