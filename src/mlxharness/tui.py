@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import queue
 from typing import TYPE_CHECKING
 
 from rich.text import Text
@@ -22,19 +23,37 @@ from mlxharness.events import (
 from mlxharness.executor import CommandResult
 
 if TYPE_CHECKING:
-    from mlxharness.agent import Agent
+    from mlxharness.orchestrator import Orchestrator
 
 CHAT_LOG_ID = "chat-log"
 PROMPT_INPUT_ID = "prompt-input"
-AGENT_WORKER_GROUP = "agent"
+BUS_WORKER_GROUP = "bus"
+
+
+def agent_label(agent_id: str) -> str:
+    if agent_id == "orchestrator":
+        return "orchestrator"
+    return agent_id
 
 
 class UserMessage(Static):
     """A single user input line shown with an accent border."""
 
 
-class AssistantTurn(Vertical):
-    """Container for all widgets produced by one agent.step() call."""
+class AgentSection(Vertical):
+    """Container for all widgets produced by one agent's emissions."""
+
+    def __init__(self, agent_id: str, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.agent_id = agent_id
+
+
+class AgentLabel(Static):
+    """Prefix label rendered at the top of an AgentSection."""
+
+    def __init__(self, agent_id: str, **kwargs) -> None:
+        super().__init__(f"{agent_label(agent_id)}:", **kwargs)
+        self.agent_id = agent_id
 
 
 class ResponseText(Markdown):
@@ -66,33 +85,31 @@ class HarnessApp(App):
     TITLE = "mlxharness"
 
     BINDINGS = [
-        Binding("ctrl+c", "interrupt", "Interrupt", show=False, priority=True),
         Binding("ctrl+d", "quit", "Quit", show=False),
+        Binding("ctrl+c", "cancel_all", "Cancel all agents", show=False, priority=True),
     ]
 
-    def __init__(self, agent: "Agent") -> None:
+    def __init__(self, orchestrator: "Orchestrator") -> None:
         super().__init__()
-        self.agent = agent
+        self.orchestrator = orchestrator
+        self._bus_queue: queue.Queue = orchestrator.bus.subscribe()
         self._chat_log: VerticalScroll | None = None
         self._prompt_input: Input | None = None
-        self._current_turn: AssistantTurn | None = None
-        self._current_response: ResponseText | None = None
-        self._current_thinking: ThinkingBlock | None = None
-        self._generating: bool = False
+        # Per-agent state: the current section's current response/thinking widget.
+        self._agent_response: dict[str, ResponseText | None] = {}
+        self._agent_thinking: dict[str, ThinkingBlock | None] = {}
+        self._agent_thinking_body: dict[str, ThinkingBody | None] = {}
 
     def compose(self) -> ComposeResult:
         yield VerticalScroll(id=CHAT_LOG_ID)
-        yield Input(placeholder="Ask me anything…", id=PROMPT_INPUT_ID)
+        yield Input(placeholder="Ask the orchestrator…", id=PROMPT_INPUT_ID)
 
     def on_mount(self) -> None:
         self._chat_log = self.query_one(f"#{CHAT_LOG_ID}", VerticalScroll)
         self._prompt_input = self.query_one(f"#{PROMPT_INPUT_ID}", Input)
         self._chat_log.anchor()
         self._prompt_input.focus()
-
-    @property
-    def is_generating(self) -> bool:
-        return self._generating
+        self._consume_bus()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         text = event.value.strip()
@@ -104,114 +121,116 @@ class HarnessApp(App):
             self.exit()
             return
 
-        if self._generating:
-            return
-
         assert self._chat_log is not None
         self._chat_log.mount(UserMessage(f"> {text}"))
+        # Non-blocking submit — orchestrator may be generating; submit queues the message.
+        self.orchestrator.submit_user(text)
 
-        turn = AssistantTurn()
-        self._chat_log.mount(turn)
-        self._current_turn = turn
-        self._current_response = None
-        self._current_thinking = None
-        self._generating = True
-        event.input.disabled = True
-
-        self.run_agent(text)
-
-    @work(thread=True, exclusive=True, group=AGENT_WORKER_GROUP)
-    def run_agent(self, user_input: str) -> None:
+    @work(thread=True, exclusive=True, group=BUS_WORKER_GROUP)
+    def _consume_bus(self) -> None:
         worker = get_current_worker()
-        try:
-            for ev in self.agent.step(user_input):
-                if worker.is_cancelled:
-                    return
-                self.call_from_thread(self._dispatch_event, ev)
-        except Exception as e:
-            if not worker.is_cancelled:
-                self.call_from_thread(self._dispatch_event, ErrorEvent(message=str(e)))
-                self.call_from_thread(self._dispatch_event, DoneEvent())
+        while not worker.is_cancelled:
+            try:
+                agent_id, ev = self._bus_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            self.call_from_thread(self._dispatch_event, agent_id, ev)
 
-    def _dispatch_event(self, event: Event) -> None:
+    def _make_section(self, agent_id: str) -> AgentSection:
+        assert self._chat_log is not None
+        section = AgentSection(agent_id=agent_id)
+        self._chat_log.mount(section)
+        section.mount(AgentLabel(agent_id=agent_id))
+        return section
+
+    def _open_section(self, agent_id: str) -> AgentSection:
+        """Return the most recent open AgentSection for agent_id, creating one if needed."""
+        assert self._chat_log is not None
+        sections = list(self._chat_log.query(AgentSection))
+        for section in reversed(sections):
+            if section.agent_id == agent_id and "closed" not in section.classes:
+                return section
+        return self._make_section(agent_id)
+
+    def _close_section(self, agent_id: str) -> None:
+        sections = list(self._chat_log.query(AgentSection)) if self._chat_log else []
+        for section in reversed(sections):
+            if section.agent_id == agent_id and "closed" not in section.classes:
+                section.add_class("closed")
+                return
+
+    def _dispatch_event(self, agent_id: str, event: Event) -> None:
         match event:
             case ThinkingEvent(text=text):
-                self._handle_thinking(text)
+                self._handle_thinking(agent_id, text)
             case TokenEvent(text=text):
-                self._handle_token(text)
+                self._handle_token(agent_id, text)
             case ToolCallEvent(command=command):
-                self._handle_tool_call(command)
+                self._handle_tool_call(agent_id, command)
             case ToolResultEvent(result=result):
-                self._handle_tool_result(result)
+                self._handle_tool_result(agent_id, result)
             case ErrorEvent(message=message):
-                self._handle_error(message)
+                self._handle_error(agent_id, message)
             case DoneEvent():
-                self._handle_done()
+                self._handle_done(agent_id)
 
-    def _handle_thinking(self, text: str) -> None:
-        assert self._current_turn is not None
-        if self._current_response is not None:
-            self._current_response = None
-        if self._current_thinking is None:
+    def _handle_thinking(self, agent_id: str, text: str) -> None:
+        section = self._open_section(agent_id)
+        self._agent_response[agent_id] = None
+        thinking = self._agent_thinking.get(agent_id)
+        body = self._agent_thinking_body.get(agent_id)
+        if thinking is None or body is None:
             body = ThinkingBody("")
-            block = ThinkingBlock(body, title="Thinking…", collapsed=False)
-            self._current_turn.mount(block)
-            self._current_thinking = block
-        body = self._current_thinking.query_one(ThinkingBody)
+            thinking = ThinkingBlock(body, title="Thinking…", collapsed=False)
+            section.mount(thinking)
+            self._agent_thinking[agent_id] = thinking
+            self._agent_thinking_body[agent_id] = body
         body.append(text)
 
-    def _handle_token(self, text: str) -> None:
-        assert self._current_turn is not None
-        self._collapse_thinking()
-        if self._current_response is None:
-            self._current_response = ResponseText("")
-            self._current_turn.mount(self._current_response)
-        self._current_response.append(text)
+    def _handle_token(self, agent_id: str, text: str) -> None:
+        section = self._open_section(agent_id)
+        self._collapse_thinking(agent_id)
+        response = self._agent_response.get(agent_id)
+        if response is None:
+            response = ResponseText("")
+            section.mount(response)
+            self._agent_response[agent_id] = response
+        response.append(text)
 
-    def _handle_tool_call(self, command: str) -> None:
-        assert self._current_turn is not None
-        self._collapse_thinking()
-        self._current_response = None
-        self._current_turn.mount(ToolCallBlock(f"$ {command}"))
+    def _handle_tool_call(self, agent_id: str, command: str) -> None:
+        section = self._open_section(agent_id)
+        self._collapse_thinking(agent_id)
+        self._agent_response[agent_id] = None
+        section.mount(ToolCallBlock(f"$ {command}"))
 
-    def _handle_tool_result(self, result: CommandResult) -> None:
-        assert self._current_turn is not None
+    def _handle_tool_result(self, agent_id: str, result: CommandResult) -> None:
+        section = self._open_section(agent_id)
         content = _format_tool_result(result)
-        self._current_turn.mount(ToolResultBlock(content))
+        section.mount(ToolResultBlock(content))
 
-    def _handle_error(self, message: str) -> None:
-        assert self._current_turn is not None
-        self._collapse_thinking()
-        self._current_response = None
-        self._current_turn.mount(ErrorBlock(f"Error: {message}"))
+    def _handle_error(self, agent_id: str, message: str) -> None:
+        section = self._open_section(agent_id)
+        self._collapse_thinking(agent_id)
+        self._agent_response[agent_id] = None
+        section.mount(ErrorBlock(f"Error: {message}"))
 
-    def _handle_done(self) -> None:
-        self._collapse_thinking()
-        self._current_response = None
-        if self._current_turn is not None:
-            self._current_turn.mount(Rule(classes="turn-separator"))
-        self._finish_generation()
+    def _handle_done(self, agent_id: str) -> None:
+        self._collapse_thinking(agent_id)
+        self._agent_response[agent_id] = None
+        section = self._open_section(agent_id)
+        section.mount(Rule(classes="turn-separator"))
+        self._close_section(agent_id)
 
-    def _collapse_thinking(self) -> None:
-        if self._current_thinking is not None:
-            self._current_thinking.collapsed = True
-            self._current_thinking = None
+    def action_cancel_all(self) -> None:
+        self.orchestrator.shutdown()
+        self.exit()
 
-    def _finish_generation(self) -> None:
-        self._generating = False
-        assert self._prompt_input is not None
-        self._prompt_input.disabled = False
-        self._prompt_input.focus()
-
-    def action_interrupt(self) -> None:
-        if not self._generating:
-            return
-        self.workers.cancel_group(self, AGENT_WORKER_GROUP)
-        if self._current_turn is not None:
-            self._current_turn.mount(Static("(interrupted)", classes="interrupted"))
-        self._collapse_thinking()
-        self._current_response = None
-        self._finish_generation()
+    def _collapse_thinking(self, agent_id: str) -> None:
+        thinking = self._agent_thinking.get(agent_id)
+        if thinking is not None:
+            thinking.collapsed = True
+            self._agent_thinking[agent_id] = None
+            self._agent_thinking_body[agent_id] = None
 
 
 def _format_tool_result(result: CommandResult) -> Text:

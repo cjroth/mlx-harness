@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import threading
+import time
 from unittest.mock import MagicMock
 
 import pytest
 
+from mlxharness.a2a import A2AMessage, Inbox
 from mlxharness.agent import (
     Agent,
     ContextWindowExhaustedError,
@@ -239,3 +242,146 @@ class TestAgent:
 
         with pytest.raises(ContextWindowExhaustedError):
             list(agent.step("Fill it up"))
+
+
+# --- Multi-agent / threaded behavior ---
+
+
+class TestAgentMultiAgent:
+    def test_event_sink_receives_all_events_tagged_with_agent_id(self):
+        engine = make_mock_engine([["Hello"]])
+        executor = make_mock_executor()
+        received: list[tuple[str, object]] = []
+        agent = Agent(
+            engine=engine,
+            executor=executor,
+            agent_id="agent-1",
+            event_sink=lambda ev: received.append(("agent-1", ev)),
+        )
+        list(agent.step("Hi"))
+        assert any(isinstance(ev, TokenEvent) for (_, ev) in received)
+        assert any(isinstance(ev, DoneEvent) for (_, ev) in received)
+        assert all(aid == "agent-1" for (aid, _) in received)
+
+    def test_gen_lock_held_during_generate(self):
+        """The agent should hold gen_lock while engine.generate is iterating."""
+        lock = threading.Lock()
+        holds: list[bool] = []
+
+        def generate_with_lock_check(messages, tools=None):
+            holds.append(lock.locked())
+            yield "Hello"
+
+        engine = MagicMock()
+        engine.context_window = 128000
+        engine.count_tokens = MagicMock(return_value=100)
+        engine.generate = MagicMock(side_effect=generate_with_lock_check)
+        executor = make_mock_executor()
+
+        agent = Agent(
+            engine=engine,
+            executor=executor,
+            agent_id="a1",
+            gen_lock=lock,
+        )
+        list(agent.step("Hi"))
+        assert holds == [True]
+        # Lock must be released after step
+        assert not lock.locked()
+
+    def test_gen_lock_released_between_turns(self):
+        """Lock must be released between turns so other agents can generate."""
+        lock = threading.Lock()
+        observations: list[bool] = []
+
+        responses = iter([
+            iter(['{"tool": "shell", "command": "ls"}']),
+            iter(["done"]),
+        ])
+
+        def generate(messages, tools=None):
+            observations.append(lock.locked())
+            return next(responses)
+
+        engine = MagicMock()
+        engine.context_window = 128000
+        engine.count_tokens = MagicMock(return_value=100)
+        engine.generate = MagicMock(side_effect=generate)
+
+        def run_shell_and_check(cmd):
+            # While executor runs, lock must be released
+            assert not lock.locked()
+            return CommandResult(0, "", "")
+
+        executor = MagicMock()
+        executor.run = MagicMock(side_effect=run_shell_and_check)
+
+        agent = Agent(engine=engine, executor=executor, gen_lock=lock)
+        list(agent.step("go"))
+        assert observations == [True, True]
+
+    def test_run_forever_processes_inbox_messages(self):
+        engine = make_mock_engine([["Reply"]])
+        executor = make_mock_executor()
+        inbox = Inbox()
+        inbox.put(A2AMessage(from_id="orchestrator", to_id="a1", content="do it"))
+        received: list[object] = []
+        done_event = threading.Event()
+
+        def sink(ev):
+            received.append(ev)
+            if isinstance(ev, DoneEvent):
+                done_event.set()
+
+        agent = Agent(
+            engine=engine,
+            executor=executor,
+            agent_id="a1",
+            inbox=inbox,
+            event_sink=sink,
+        )
+
+        t = threading.Thread(target=agent.run_forever, daemon=True)
+        t.start()
+        assert done_event.wait(timeout=2)
+        agent.stop()
+        t.join(timeout=2)
+        assert any(isinstance(ev, TokenEvent) and ev.text == "Reply" for ev in received)
+
+    def test_subagent_posts_done_to_parent_outbox(self):
+        engine = make_mock_engine([["bye"]])
+        executor = make_mock_executor()
+        inbox = Inbox()
+        outbox = Inbox()
+        inbox.put(A2AMessage(from_id="orchestrator", to_id="a1", content="task"))
+        done_event = threading.Event()
+
+        def sink(ev):
+            if isinstance(ev, DoneEvent):
+                done_event.set()
+
+        agent = Agent(
+            engine=engine,
+            executor=executor,
+            agent_id="a1",
+            inbox=inbox,
+            outbox=outbox,
+            parent_id="orchestrator",
+            event_sink=sink,
+        )
+        t = threading.Thread(target=agent.run_forever, daemon=True)
+        t.start()
+        assert done_event.wait(timeout=2)
+        # Give run_forever a moment to post outbox message
+        deadline = time.time() + 1
+        msgs: list[A2AMessage] = []
+        while time.time() < deadline and not msgs:
+            msgs = outbox.drain()
+            if not msgs:
+                time.sleep(0.01)
+        agent.stop()
+        t.join(timeout=2)
+        assert len(msgs) >= 1
+        assert msgs[-1].from_id == "a1"
+        assert msgs[-1].to_id == "orchestrator"
+        assert "bye" in msgs[-1].content

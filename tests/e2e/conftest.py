@@ -44,3 +44,19 @@ def agent(engine, sandbox):
     executor = DockerExecutor(container_name="mlxharness-test-sandbox")
     executor._started = True  # Container already running from fixture
     return Agent(engine=engine, executor=executor)
+
+
+@pytest.fixture
+def orchestrator(engine, sandbox):
+    """Fresh orchestrator per test. Shares model and sandbox."""
+    from mlxharness.bus import EventBus
+    from mlxharness.executor import DockerExecutor
+    from mlxharness.orchestrator import Orchestrator
+
+    executor = DockerExecutor(container_name="mlxharness-test-sandbox")
+    executor._started = True
+    bus = EventBus()
+    orch = Orchestrator(engine=engine, executor=executor, bus=bus)
+    orch.start()
+    yield orch
+    orch.shutdown()
